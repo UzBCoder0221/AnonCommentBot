@@ -1,3 +1,4 @@
+from datetime import datetime
 import sqlite3
 
 
@@ -57,7 +58,7 @@ class Database:
         self.execute(sql, commit=True)
     def create_table_user_post(self):
         sql = """
-        CREATE TABLE Posts (
+        CREATE TABLE user_post (
             id INT NOT NULL PRIMARY KEY,
             user INT,
             post INT,
@@ -66,7 +67,7 @@ class Database:
         self.execute(sql, commit=True)
     def create_table_reaction(self):
         sql = """
-        CREATE TABLE Posts (
+        CREATE TABLE reaction (
             id INT NOT NULL PRIMARY KEY,
             user INT,
             post INT,
@@ -84,9 +85,9 @@ class Database:
         ])
         return sql, tuple(parameters.values())
 
-    def add_user(self, id: int, name: str, username: str, email: str = None, language: str = 'uz'):
+    def add_user(self, id: int, telegram_id: int, first_name: str, last_name: str = None, username: str = None, joined_at = datetime.today(), language='uz'):
         sql = """
-        INSERT INTO Users(id, Name, username, email, language) VALUES(?, ?, ?, ?, ?)
+        INSERT INTO Users(id, telegram_id, first_name, last_name, username, joined_at, language) VALUES(?, ?, ?, ?, ?, ?, ?)
         """
         self.execute(sql, parameters=(id, name, username, email, language), commit=True)
 
