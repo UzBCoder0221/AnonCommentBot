@@ -41,7 +41,7 @@ async def database_connected():
     # Ma'lumotlar bazasini yaratamiz:
     # await db.create()  # psql
     # await db.drop_users()
-    db.create_table_users()
+    db.create_all_tables()
 
 
 async def aiogram_on_startup_polling(dispatcher: Dispatcher, bot: Bot) -> None:

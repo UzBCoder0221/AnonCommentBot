@@ -37,7 +37,7 @@ class Database:
             last_name VARCHAR(255),
             username VARCHAR(255),
             joined_at DATETIME,
-            language VARCHAR(3),
+            language VARCHAR(3)
             );
 """
         self.execute(sql, commit=True)
@@ -51,17 +51,18 @@ class Database:
             to_message_id INT,
             thread_start_id INT,
             channel_id INT,
-            content INT,
-            created_at INT
+            content VARCHAR(MAX),
+            created_at DATETIME
             );
 """
         self.execute(sql, commit=True)
+
     def create_table_user_post(self):
         sql = """
         CREATE TABLE user_post (
             id INT NOT NULL PRIMARY KEY,
             user INT,
-            post INT,
+            post INT
             );
 """
         self.execute(sql, commit=True)
@@ -71,12 +72,17 @@ class Database:
             id INT NOT NULL PRIMARY KEY,
             user INT,
             post INT,
-            reaction VARCHAR(255)
+            reaction VARCHAR(255),
             created_at INT
             );
 """
         self.execute(sql, commit=True)
 
+    def create_all_tables(self):
+        self.create_table_users()
+        self.create_table_posts()
+        self.create_table_user_post()
+        self.create_table_reaction()
 
     @staticmethod
     def format_args(sql, parameters: dict):
@@ -89,7 +95,19 @@ class Database:
         sql = """
         INSERT INTO Users(id, telegram_id, first_name, last_name, username, joined_at, language) VALUES(?, ?, ?, ?, ?, ?, ?)
         """
-        self.execute(sql, parameters=(id, name, username, email, language), commit=True)
+        self.execute(sql, parameters=(id, telegram_id, first_name, last_name, username, joined_at, language), commit=True)
+    
+    def add_post(self, id: int, to_id: int, message_id: int, to_message_id: int = None, thread_start_id: int = None, channel_id: int = None, content: str = None, created_at=datetime.today()):
+        sql = """
+        INSERT INTO Posts(id, to_id, message_id, to_message_id, thread_start_id, channel_id, content, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        self.execute(sql, parameters=(id, to_id, message_id, to_message_id, thread_start_id, channel_id, content, created_at), commit=True)
+    def add_user_post(self, id: int, user: int, post: int):
+        sql = """
+        INSERT INTO user_post(id, user, post) VALUES(?, ?, ?)
+        """
+        self.execute(sql, parameters=(id, user, post), commit=True)
+
 
     def select_all_users(self):
         sql = """
@@ -106,16 +124,80 @@ class Database:
     def count_users(self):
         return self.execute("SELECT COUNT(*) FROM Users;", fetchone=True)
 
-    def update_user_email(self, email, id):
-        # SQL_EXAMPLE = "UPDATE Users SET email=mail@gmail.com WHERE id=12345"
-
+    def update_user_language(self, language, id):
         sql = f"""
-        UPDATE Users SET email=? WHERE id=?
+        UPDATE Users SET language=? WHERE id=?
         """
-        return self.execute(sql, parameters=(email, id), commit=True)
+        return self.execute(sql, parameters=(language, id), commit=True)
 
     def delete_users(self):
         self.execute("DELETE FROM Users WHERE TRUE", commit=True)
+
+    def select_all_posts(self):
+        sql = """
+        SELECT * FROM Posts
+        """
+        return self.execute(sql, fetchall=True)
+
+    def select_post(self, **kwargs):
+        sql = "SELECT * FROM Posts WHERE "
+        sql, parameters = self.format_args(sql, kwargs)
+        return self.execute(sql, parameters=parameters, fetchone=True)
+
+    def count_posts(self):
+        return self.execute("SELECT COUNT(*) FROM Posts;", fetchone=True)
+
+    def update_post_content(self, content, id):
+        sql = """
+        UPDATE Posts SET content=? WHERE id=?
+        """
+        return self.execute(sql, parameters=(content, id), commit=True)
+
+    def update_post_to_message_id(self, to_message_id, id):
+        sql = """
+        UPDATE Posts SET to_message_id=? WHERE id=?
+        """
+        return self.execute(sql, parameters=(to_message_id, id), commit=True)
+
+    def delete_posts(self):
+        self.execute("DELETE FROM Posts WHERE TRUE", commit=True)
+
+    def select_all_user_posts(self):
+        sql = """
+        SELECT * FROM user_post
+        """
+        return self.execute(sql, fetchall=True)
+
+    def select_user_post(self, **kwargs):
+        sql = "SELECT * FROM user_post WHERE "
+        sql, parameters = self.format_args(sql, kwargs)
+        return self.execute(sql, parameters=parameters, fetchone=True)
+
+    def delete_user_posts(self):
+        self.execute("DELETE FROM user_post WHERE TRUE", commit=True)
+
+    def add_reaction(self, id: int, user: int, post: int, reaction: str, created_at: int):
+        sql = """
+        INSERT INTO reaction(id, user, post, reaction, created_at) VALUES(?, ?, ?, ?, ?)
+        """
+        self.execute(sql, parameters=(id, user, post, reaction, created_at), commit=True)
+
+    def select_all_reactions(self):
+        sql = """
+        SELECT * FROM reaction
+        """
+        return self.execute(sql, fetchall=True)
+
+    def select_reaction(self, **kwargs):
+        sql = "SELECT * FROM reaction WHERE "
+        sql, parameters = self.format_args(sql, kwargs)
+        return self.execute(sql, parameters=parameters, fetchone=True)
+
+    def count_reactions(self):
+        return self.execute("SELECT COUNT(*) FROM reaction;", fetchone=True)
+
+    def delete_reactions(self):
+        self.execute("DELETE FROM reaction WHERE TRUE", commit=True)
 
 
 def logger(statement):
