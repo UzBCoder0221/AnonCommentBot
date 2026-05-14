@@ -11,32 +11,27 @@ router = Router()
 
 @router.message(CommandStart())
 async def do_start(message: types.Message):
-    """
-            MARKDOWN V2                     |     HTML
-    link:   [Google](https://google.com/)   |     <a href='https://google.com/'>Google</a>
-    bold:   *Qalin text*                    |     <b>Qalin text</b>
-    italic: _Yotiq shriftdagi text_         |     <i>Yotiq shriftdagi text</i>
-
-
-
-                    **************     Note     **************
-    Markdownda _ * [ ] ( ) ~ ` > # + - = | { } . ! belgilari to'g'ridan to'g'ri ishlatilmaydi!!!
-    Bu belgilarni ishlatish uchun oldidan \ qo'yish esdan chiqmasin. Masalan  \.  ko'rinishi . belgisini ishlatish uchun yozilgan.
-    """
-
     telegram_id = message.from_user.id
     full_name = message.from_user.full_name
     username = message.from_user.username
-    user = None
+
     try:
-        user = await db.add_user(telegram_id=telegram_id, full_name=full_name, username=username)
+        user = db.get_or_create_user(
+            telegram_id=telegram_id,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+            username=username
+        )
+        if user:
+            count = db.count_users()
+            msg = (f"[{make_title(full_name)}](tg://user?id={telegram_id}) bazaga qo'shildi\.\n"
+                   f"Bazada {count[0]} ta foydalanuvchi bor\.")
+        else:
+            msg = f"[{make_title(full_name)}](tg://user?id={telegram_id}) bazaga oldin qo'shilgan"
     except Exception as error:
         logger.info(error)
-    if user:
-        count = await db.count_users()
-        msg = (f"[{make_title(user['full_name'])}](tg://user?id={user['telegram_id']}) bazaga qo'shildi\.\nBazada {count} ta foydalanuvchi bor\.")
-    else:
         msg = f"[{make_title(full_name)}](tg://user?id={telegram_id}) bazaga oldin qo'shilgan"
+
     for admin in ADMINS:
         try:
             await bot.send_message(

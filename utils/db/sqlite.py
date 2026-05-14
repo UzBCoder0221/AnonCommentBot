@@ -1,5 +1,6 @@
 from datetime import datetime
 import sqlite3
+import re
 
 
 class Database:
@@ -30,9 +31,10 @@ class Database:
 
     def create_table_users(self):
         sql = """
-        CREATE TABLE Users (
-            id INT NOT NULL PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS Users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             telegram_id INT NOT NULL,
+            anon_name VARCHAR(255) DEFAULT 'USER',
             first_name VARCHAR(255) DEFAULT 'User',
             last_name VARCHAR(255),
             username VARCHAR(255),
@@ -44,14 +46,14 @@ class Database:
 
     def create_table_posts(self):
         sql = """
-        CREATE TABLE Posts (
-            id INT NOT NULL PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS Posts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             to_id INT,
             message_id INT,
             to_message_id INT,
             thread_start_id INT,
             channel_id INT,
-            content VARCHAR(MAX),
+            content TEXT,
             created_at DATETIME
             );
 """
@@ -59,8 +61,8 @@ class Database:
 
     def create_table_user_post(self):
         sql = """
-        CREATE TABLE user_post (
-            id INT NOT NULL PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS user_post (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             user INT,
             post INT
             );
@@ -68,8 +70,8 @@ class Database:
         self.execute(sql, commit=True)
     def create_table_reaction(self):
         sql = """
-        CREATE TABLE reaction (
-            id INT NOT NULL PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS reaction (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             user INT,
             post INT,
             reaction VARCHAR(255),
@@ -91,22 +93,22 @@ class Database:
         ])
         return sql, tuple(parameters.values())
 
-    def add_user(self, id: int, telegram_id: int, first_name: str, last_name: str = None, username: str = None, joined_at = datetime.today(), language='uz'):
+    def add_user(self, telegram_id: int, anon_name: str, first_name: str, last_name: str = None, username: str = None, joined_at = datetime.today(), language='uz'):
         sql = """
-        INSERT INTO Users(id, telegram_id, first_name, last_name, username, joined_at, language) VALUES(?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO Users(telegram_id, anon_name, first_name, last_name, username, joined_at, language) VALUES(?, ?, ?, ?, ?, ?, ?)
         """
-        self.execute(sql, parameters=(id, telegram_id, first_name, last_name, username, joined_at, language), commit=True)
+        self.execute(sql, parameters=(telegram_id, anon_name, first_name, last_name, username, joined_at, language), commit=True)
     
-    def add_post(self, id: int, to_id: int, message_id: int, to_message_id: int = None, thread_start_id: int = None, channel_id: int = None, content: str = None, created_at=datetime.today()):
+    def add_post(self, to_id: int, message_id: int, to_message_id: int = None, thread_start_id: int = None, channel_id: int = None, content: str = None, created_at=datetime.today()):
         sql = """
-        INSERT INTO Posts(id, to_id, message_id, to_message_id, thread_start_id, channel_id, content, created_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO Posts(to_id, message_id, to_message_id, thread_start_id, channel_id, content, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)
         """
-        self.execute(sql, parameters=(id, to_id, message_id, to_message_id, thread_start_id, channel_id, content, created_at), commit=True)
-    def add_user_post(self, id: int, user: int, post: int):
+        self.execute(sql, parameters=(to_id, message_id, to_message_id, thread_start_id, channel_id, content, created_at), commit=True)
+    def add_user_post(self, user: int, post: int):
         sql = """
-        INSERT INTO user_post(id, user, post) VALUES(?, ?, ?)
+        INSERT INTO user_post(user, post) VALUES(?, ?)
         """
-        self.execute(sql, parameters=(id, user, post), commit=True)
+        self.execute(sql, parameters=(user, post), commit=True)
 
 
     def select_all_users(self):
@@ -144,6 +146,10 @@ class Database:
         sql, parameters = self.format_args(sql, kwargs)
         return self.execute(sql, parameters=parameters, fetchone=True)
 
+    def select_last_post(self, to_id: int):
+        sql = "SELECT * FROM Posts WHERE to_id = ? ORDER BY id DESC LIMIT 1"
+        return self.execute(sql, parameters=(to_id,), fetchone=True)
+
     def count_posts(self):
         return self.execute("SELECT COUNT(*) FROM Posts;", fetchone=True)
 
@@ -176,11 +182,26 @@ class Database:
     def delete_user_posts(self):
         self.execute("DELETE FROM user_post WHERE TRUE", commit=True)
 
-    def add_reaction(self, id: int, user: int, post: int, reaction: str, created_at: int):
+    def add_reaction(self, user: int, post: int, reaction: str, created_at: int):
         sql = """
-        INSERT INTO reaction(id, user, post, reaction, created_at) VALUES(?, ?, ?, ?, ?)
+        INSERT INTO reaction(user, post, reaction, created_at) VALUES(?, ?, ?, ?)
         """
-        self.execute(sql, parameters=(id, user, post, reaction, created_at), commit=True)
+        self.execute(sql, parameters=(user, post, reaction, created_at), commit=True)
+
+    def get_or_create_user(self, telegram_id: int, first_name: str, last_name: str = None, username: str = None):
+        user = self.select_user(telegram_id=telegram_id)
+        if user:
+            return user
+        count = self.count_users()
+        anon_name = f"USER{(count[0] or 0) + 1}"
+        self.add_user(
+            telegram_id=telegram_id,
+            anon_name=anon_name,
+            first_name=first_name,
+            last_name=last_name,
+            username=username
+        )
+        return self.select_user(telegram_id=telegram_id)
 
     def select_all_reactions(self):
         sql = """
