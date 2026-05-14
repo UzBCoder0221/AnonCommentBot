@@ -16,31 +16,17 @@ def setup_middlewares(dispatcher: Dispatcher, bot: Bot) -> None:
     """MIDDLEWARE"""
     from middlewares.throttling import ThrottlingMiddleware
 
-    # Spamdan himoya qilish uchun klassik ichki o'rta dastur. So'rovlar orasidagi asosiy vaqtlar 0,5 soniya
     dispatcher.message.middleware(ThrottlingMiddleware(slow_mode_delay=0.5))
-
-
-def setup_filters(dispatcher: Dispatcher) -> None:
-    """FILTERS"""
-    from filters import ChatPrivateFilter
-
-    # Chat turini aniqlash uchun klassik umumiy filtr
-    # Filtrni handlers/users/__init__ -dagi har bir routerga alohida o'rnatish mumkin
-    dispatcher.message.filter(ChatPrivateFilter(chat_type=["private"]))
 
 
 async def setup_aiogram(dispatcher: Dispatcher, bot: Bot) -> None:
     logger.info("Configuring aiogram")
     setup_handlers(dispatcher=dispatcher)
     setup_middlewares(dispatcher=dispatcher, bot=bot)
-    setup_filters(dispatcher=dispatcher)
     logger.info("Configured aiogram")
 
 
 async def database_connected():
-    # Ma'lumotlar bazasini yaratamiz:
-    # await db.create()  # psql
-    # await db.drop_users()
     db.create_all_tables()
 
 
@@ -78,7 +64,6 @@ def main():
     dispatcher.startup.register(aiogram_on_startup_polling)
     dispatcher.shutdown.register(aiogram_on_shutdown_polling)
     asyncio.run(dispatcher.start_polling(bot, close_bot_session=True))
-    # allowed_updates=['message', 'chat_member']
 
 
 if __name__ == "__main__":
