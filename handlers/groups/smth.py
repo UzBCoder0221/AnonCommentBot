@@ -26,6 +26,30 @@ def is_single_emoji(text: str) -> bool:
     return bool(EMOJI_PATTERN.match(text))
 
 
+def _esc(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _get_reply_post(chat_id: int, reply_msg):
+    """Try to find the post by to_message_id (bot copy) first, then by original message_id."""
+    post = db.select_post(to_message_id=reply_msg.message_id)
+    if not post:
+        post = db.select_post(to_id=chat_id, message_id=reply_msg.message_id)
+    return post
+
+
+def _get_reply_user(reply_post):
+    """Get anon_name of user who wrote the reply target."""
+    if not reply_post:
+        return None
+    reply_up = db.select_user_post(post=reply_post[0])
+    if reply_up:
+        reply_user = db.select_user(id=reply_up[1])
+        if reply_user:
+            return reply_user[2]
+    return None
+
+
 @router.message(F.chat.type.in_({"group", "supergroup"}))
 async def group_message_handler(message: types.Message):
     if message.from_user.is_bot:
@@ -42,7 +66,7 @@ async def group_message_handler(message: types.Message):
     anon_name = db_user[2]
     content = message.text or message.caption or ""
 
-    # Edit-by-reference: "#123 new text" edits post 123
+    # --- Edit-by-reference: "#5 new text" ---
     edit_match = EDIT_PATTERN.match(content)
     if edit_match:
         target_post_id = int(edit_match.group(1))
@@ -51,7 +75,7 @@ async def group_message_handler(message: types.Message):
         if post:
             up = db.select_user_post(post=target_post_id)
             if up and up[1] == db_user[0]:
-                escaped = new_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                escaped = _esc(new_text)
                 lines = [f"<b>{anon_name} (edited)</b>", escaped]
                 try:
                     await bot.edit_message_text(
@@ -63,16 +87,17 @@ async def group_message_handler(message: types.Message):
         await message.delete()
         return
 
-    # Single emoji = reaction
+    # --- Single emoji = REACTION ---
     if is_single_emoji(content):
+        target_post = None
         if message.reply_to_message:
-            target_post = db.select_post(
-                to_id=chat_id, message_id=message.reply_to_message.message_id
-            )
+            target_post = _get_reply_post(chat_id, message.reply_to_message)
         else:
             target_post = db.select_last_post(to_id=chat_id)
+
         if not target_post:
             return
+
         target_post_id = target_post[0]
         now_ts = int(datetime.now().timestamp())
         db.add_reaction(
@@ -82,24 +107,21 @@ async def group_message_handler(message: types.Message):
         await message.delete()
         return
 
-    # Build bot's message
+    # --- Normal message ---
     lines = [f"<b>{anon_name}</b>"]
 
+    reply_post = None
     if message.reply_to_message:
-        reply_post = db.select_post(
-            to_id=chat_id, message_id=message.reply_to_message.message_id
-        )
-        if reply_post:
-            reply_up = db.select_user_post(post=reply_post[0])
-            if reply_up:
-                reply_user = db.select_user(id=reply_up[1])
-                if reply_user:
-                    lines.append(f"└─ #{reply_post[0]} <b>{reply_user[2]}</b>")
+        reply_post = _get_reply_post(chat_id, message.reply_to_message)
+        reply_user = _get_reply_user(reply_post)
+        if reply_user:
+            lines.append(f"<i>reply to {reply_user}</i>")
 
     if content:
-        escaped = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        escaped = _esc(content)
         lines.append(escaped)
 
+    # Send message to group
     if message.photo:
         sent = await bot.send_photo(
             chat_id=chat_id, photo=message.photo[-1].file_id,
@@ -120,6 +142,7 @@ async def group_message_handler(message: types.Message):
             chat_id=chat_id, text="\n".join(lines), parse_mode=ParseMode.HTML
         )
 
+    # Save to DB
     db.add_post(
         to_id=chat_id, message_id=message.message_id,
         to_message_id=sent.message_id, channel_id=chat_id,
@@ -128,6 +151,27 @@ async def group_message_handler(message: types.Message):
     last_post = db.select_post(to_id=chat_id, message_id=message.message_id)
     if last_post:
         db.add_user_post(user=db_user[0], post=last_post[0])
+        post_id = last_post[0]
+
+        # Update message with post numbers
+        number_line = f"\n#{post_id}"
+        if reply_post:
+            number_line += f"  reply to #{reply_post[0]}"
+
+        updated_lines = lines + [number_line]
+        try:
+            if message.photo or message.video or message.animation:
+                await bot.edit_message_caption(
+                    chat_id=chat_id, message_id=sent.message_id,
+                    caption="\n".join(updated_lines), parse_mode=ParseMode.HTML
+                )
+            else:
+                await bot.edit_message_text(
+                    chat_id=chat_id, message_id=sent.message_id,
+                    text="\n".join(updated_lines), parse_mode=ParseMode.HTML
+                )
+        except Exception as e:
+            logger.info(f"Post number update failed: {e}")
 
     await message.delete()
 
@@ -149,8 +193,7 @@ async def group_edit_handler(message: types.Message):
     content = message.text or message.caption or ""
     lines = [f"<b>{db_user[2]} (edited)</b>"]
     if content:
-        escaped = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        lines.append(escaped)
+        lines.append(_esc(content))
 
     try:
         if message.photo or message.video or message.animation:
