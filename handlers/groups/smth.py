@@ -66,17 +66,27 @@ async def group_message_handler(message: types.Message):
     anon_name = db_user[2]
     content = message.text or message.caption or ""
 
+    # --- Single emoji = REACTION --- #
     if is_single_emoji(content) and message.reply_to_message:
         post = _get_reply_post(chat_id, message.reply_to_message.message_id)
         if post:
             db.add_reaction(message.from_user.id, post[0], content)
+            db.select_reactions(user=message.from_user.id, post=post[0])
             org = message.reply_to_message.text or message.reply_to_message.caption or ""
             org += "\n<quote>REACTIONS: "
-            await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption="")
-            await bot.edit_message_text(text="",chat_id=chat_id, message_id=post[2])
+            try:
+                if message.reply_to_message.caption:
+                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption="")
+                else:
+                    await bot.edit_message_text(text="",chat_id=chat_id, message_id=post[2])
+                await message.delete()
+            except Exception as e:
+                logger.error(e)
+
+        ####    FALLBACK LOGIC HERE    ####
 
 
-    # --- Edit-by-reference: "#5 new text" ---
+    # --- Edit-by-reference: edit "*new text" ---
     edit_match = EDIT_PATTERN.match(content)
     if edit_match:
         target_post_id = int(edit_match.group(1))
@@ -97,25 +107,6 @@ async def group_message_handler(message: types.Message):
         await message.delete()
         return
 
-    # --- Single emoji = REACTION ---
-    if is_single_emoji(content):
-        target_post = None
-        if message.reply_to_message:
-            target_post = _get_reply_post(chat_id, message.reply_to_message)
-        else:
-            target_post = db.select_last_post(to_id=chat_id)
-
-        if not target_post:
-            return
-
-        target_post_id = target_post[0]
-        now_ts = int(datetime.now().timestamp())
-        db.add_reaction(
-            user=db_user[0], post=target_post_id,
-            reaction=content.strip(), created_at=now_ts
-        )
-        await message.delete()
-        return
 
     # --- Normal message ---
     lines = [f"<quote>{anon_name}</quote>"]
