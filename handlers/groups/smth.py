@@ -14,7 +14,7 @@ EMOJI_PATTERN = re.compile(
     r'\U0001F1F2-\U0001F1F4\U0001F1E6-\U0001F1FF]+$'
 )
 
-EDIT_PATTERN = re.compile(r'^#(\d+)\s+(.+)$')
+EDIT_PATTERN = re.compile(r'^#USER_(\d+)$')
 
 
 def is_single_emoji(text: str) -> bool:
@@ -30,11 +30,11 @@ def _esc(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _get_reply_post(chat_id: int, reply_msg):
+def _get_reply_post(chat_id: int, reply_msg_id: int):
     """Try to find the post by to_message_id (bot copy) first, then by original message_id."""
-    post = db.select_post(to_message_id=reply_msg.message_id)
+    post = db.select_post(to_message_id=reply_msg_id)
     if not post:
-        post = db.select_post(to_id=chat_id, message_id=reply_msg.message_id)
+        post = db.select_post(to_id=chat_id, message_id=reply_msg_id)
     return post
 
 
@@ -65,6 +65,16 @@ async def group_message_handler(message: types.Message):
     )
     anon_name = db_user[2]
     content = message.text or message.caption or ""
+
+    if is_single_emoji(content) and message.reply_to_message:
+        post = _get_reply_post(chat_id, message.reply_to_message.message_id)
+        if post:
+            db.add_reaction(message.from_user.id, post[0], content)
+            org = message.reply_to_message.text or message.reply_to_message.caption or ""
+            org += "\n<quote>REACTIONS: "
+            await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption="")
+            await bot.edit_message_text(text="",chat_id=chat_id, message_id=post[2])
+
 
     # --- Edit-by-reference: "#5 new text" ---
     edit_match = EDIT_PATTERN.match(content)
@@ -108,17 +118,20 @@ async def group_message_handler(message: types.Message):
         return
 
     # --- Normal message ---
-    lines = [f"<b>{anon_name}</b>"]
+    lines = [f"<quote>{anon_name}</quote>"]
 
     reply_post = None
     if message.reply_to_message:
         reply_post = _get_reply_post(chat_id, message.reply_to_message)
         reply_user = _get_reply_user(reply_post)
         if reply_user:
-            lines.append(f"<i>reply to {reply_user}</i>")
+            lines.append(f"<quote>#REPLY_TO #{reply_user}</quote>")
+            lines.append(f"#REPLY_TO_MESSAGE #MESSAGE_{reply_post[0]}")
+    lines.append(f"#MESSAGE_{message.message_id}")
 
     if content:
         escaped = _esc(content)
+        lines.append('\n')
         lines.append(escaped)
 
     # Send message to group
@@ -151,79 +164,25 @@ async def group_message_handler(message: types.Message):
     last_post = db.select_post(to_id=chat_id, message_id=message.message_id)
     if last_post:
         db.add_user_post(user=db_user[0], post=last_post[0])
-        post_id = last_post[0]
-
+        # post_id = last_post[0]
         # Update message with post numbers
-        number_line = f"\n#{post_id}"
-        if reply_post:
-            number_line += f"  reply to #{reply_post[0]}"
+        # number_line = f"\n#{post_id}"
+        # if reply_post:
+        #     number_line += f"  reply to #{reply_post[0]}"
 
-        updated_lines = lines + [number_line]
-        try:
-            if message.photo or message.video or message.animation:
-                await bot.edit_message_caption(
-                    chat_id=chat_id, message_id=sent.message_id,
-                    caption="\n".join(updated_lines), parse_mode=ParseMode.HTML
-                )
-            else:
-                await bot.edit_message_text(
-                    chat_id=chat_id, message_id=sent.message_id,
-                    text="\n".join(updated_lines), parse_mode=ParseMode.HTML
-                )
-        except Exception as e:
-            logger.info(f"Post number update failed: {e}")
+        # updated_lines = lines + [number_line]
+        # try:
+        #     if message.photo or message.video or message.animation:
+        #         await bot.edit_message_caption(
+        #             chat_id=chat_id, message_id=sent.message_id,
+        #             caption="\n".join(updated_lines), parse_mode=ParseMode.HTML
+        #         )
+        #     else:
+        #         await bot.edit_message_text(
+        #             chat_id=chat_id, message_id=sent.message_id,
+        #             text="\n".join(updated_lines), parse_mode=ParseMode.HTML
+        #         )
+        # except Exception as e:
+        #     logger.info(f"Post number update failed: {e}")
 
     await message.delete()
-
-
-@router.edited_message(F.chat.type.in_({"group", "supergroup"}))
-async def group_edit_handler(message: types.Message):
-    if message.from_user.is_bot:
-        return
-    chat_id = message.chat.id
-    post = db.select_post(to_id=chat_id, message_id=message.message_id)
-    if not post:
-        return
-
-    user = message.from_user
-    db_user = db.get_or_create_user(
-        telegram_id=user.id, first_name=user.first_name,
-        last_name=user.last_name, username=user.username
-    )
-    content = message.text or message.caption or ""
-    lines = [f"<b>{db_user[2]} (edited)</b>"]
-    if content:
-        lines.append(_esc(content))
-
-    try:
-        if message.photo or message.video or message.animation:
-            await bot.edit_message_caption(
-                chat_id=chat_id, message_id=post[3],
-                caption="\n".join(lines), parse_mode=ParseMode.HTML
-            )
-        else:
-            await bot.edit_message_text(
-                chat_id=chat_id, message_id=post[3],
-                text="\n".join(lines), parse_mode=ParseMode.HTML
-            )
-    except Exception as e:
-        logger.info(f"Edit failed: {e}")
-
-
-@router.message_reaction()
-async def group_reaction_handler(reaction: types.MessageReactionUpdated):
-    if reaction.chat.type not in ("group", "supergroup"):
-        return
-    user = reaction.user
-    db_user = db.select_user(telegram_id=user.id)
-    if not db_user:
-        return
-    new_emojis = [r.emoji for r in reaction.new_reaction if r.emoji]
-    if not new_emojis:
-        return
-    post = db.select_post(to_id=reaction.chat.id, message_id=reaction.message_id)
-    if not post:
-        return
-    now_ts = int(datetime.now().timestamp())
-    for emoji in new_emojis:
-        db.add_reaction(user=db_user[0], post=post[0], reaction=emoji, created_at=now_ts)

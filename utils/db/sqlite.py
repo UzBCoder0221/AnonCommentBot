@@ -75,7 +75,7 @@ class Database:
             user INT,
             post INT,
             reaction VARCHAR(255),
-            created_at INT
+            created_at DATETIME
             );
 """
         self.execute(sql, commit=True)
@@ -182,7 +182,7 @@ class Database:
     def delete_user_posts(self):
         self.execute("DELETE FROM user_post WHERE TRUE", commit=True)
 
-    def add_reaction(self, user: int, post: int, reaction: str, created_at: int):
+    def add_reaction(self, user: int, post: int, reaction: str, created_at=datetime.today()):
         sql = """
         INSERT INTO reaction(user, post, reaction, created_at) VALUES(?, ?, ?, ?)
         """
@@ -193,7 +193,7 @@ class Database:
         if user:
             return user
         count = self.count_users()
-        anon_name = f"USER{(count[0] or 0) + 1}"
+        anon_name = f"USER_{(count[0] or 0) + 1}"
         self.add_user(
             telegram_id=telegram_id,
             anon_name=anon_name,
