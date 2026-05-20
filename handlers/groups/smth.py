@@ -70,15 +70,20 @@ async def group_message_handler(message: types.Message):
     if is_single_emoji(content) and message.reply_to_message:
         post = _get_reply_post(chat_id, message.reply_to_message.message_id)
         if post:
-            db.add_reaction(message.from_user.id, post[0], content)
-            db.select_reactions(user=message.from_user.id, post=post[0])
+            uid = db.select_user(telegram_id=message.from_user.id)[0]
+            db.add_reaction(uid, post[0], content)
+            reactions = db.select_reactions(user=message.from_user.id, post=post[0])
             org = message.reply_to_message.text or message.reply_to_message.caption or ""
             org += "\n<quote>REACTIONS: "
+            for i in reactions:
+                org+=f"{i[1]}x{i[0]} "
+            org += "</quote>"
+
             try:
                 if message.reply_to_message.caption:
-                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption="")
+                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption=org)
                 else:
-                    await bot.edit_message_text(text="",chat_id=chat_id, message_id=post[2])
+                    await bot.edit_message_text(text=org,chat_id=chat_id, message_id=post[2])
                 await message.delete()
             except Exception as e:
                 logger.error(e)
@@ -87,7 +92,7 @@ async def group_message_handler(message: types.Message):
 
 
     # --- Edit-by-reference: edit "*new text" ---
-    edit_match = EDIT_PATTERN.match(content)
+    edit_match = content[0] == "*"
     if edit_match:
         target_post_id = int(edit_match.group(1))
         new_text = edit_match.group(2)
@@ -109,41 +114,42 @@ async def group_message_handler(message: types.Message):
 
 
     # --- Normal message ---
-    lines = [f"<quote>{anon_name}</quote>"]
+    lines = [f"<quote>#{anon_name}</quote>"]
 
     reply_post = None
     if message.reply_to_message:
-        reply_post = _get_reply_post(chat_id, message.reply_to_message)
+        reply_post = _get_reply_post(chat_id, message.reply_to_message.message_id)
         reply_user = _get_reply_user(reply_post)
         if reply_user:
             lines.append(f"<quote>#REPLY_TO #{reply_user}</quote>")
-            lines.append(f"#REPLY_TO_MESSAGE #MESSAGE_{reply_post[0]}")
-    lines.append(f"#MESSAGE_{message.message_id}")
+            lines.append(f"<quote>#REPLY_TO_MESSAGE #MESSAGE_{reply_post[0]}</quote>")
+    lines.append(f"<quote>#MESSAGE_{message.message_id}</quote>")
 
     if content:
         escaped = _esc(content)
         lines.append('\n')
         lines.append(escaped)
 
+    msg = _esc("\n".join(lines))
     # Send message to group
     if message.photo:
         sent = await bot.send_photo(
             chat_id=chat_id, photo=message.photo[-1].file_id,
-            caption="\n".join(lines), parse_mode=ParseMode.HTML
+            caption=msg, parse_mode=ParseMode.HTML
         )
     elif message.video:
         sent = await bot.send_video(
             chat_id=chat_id, video=message.video.file_id,
-            caption="\n".join(lines), parse_mode=ParseMode.HTML
+            caption=msg, parse_mode=ParseMode.HTML
         )
     elif message.animation:
         sent = await bot.send_animation(
             chat_id=chat_id, animation=message.animation.file_id,
-            caption="\n".join(lines), parse_mode=ParseMode.HTML
+            caption=msg, parse_mode=ParseMode.HTML
         )
     else:
         sent = await bot.send_message(
-            chat_id=chat_id, text="\n".join(lines), parse_mode=ParseMode.HTML
+            chat_id=chat_id, text=msg, parse_mode=ParseMode.HTML
         )
 
     # Save to DB
