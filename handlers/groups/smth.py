@@ -57,10 +57,10 @@ async def group_message_handler(message: types.Message):
     chat_id = message.chat.id
     user = message.from_user
     msg_id = message.message_id
-    reply_id = message.reply_to_message.message_id
-    content = message.text or message.caption or ""
     is_reply = message.reply_to_message is not None
-    
+    reply_id = message.reply_to_message.message_id if is_reply else None
+    content = message.text or message.caption or ""
+
 
     sender = db.get_or_create_user(
         telegram_id=user.id,
@@ -68,7 +68,7 @@ async def group_message_handler(message: types.Message):
         last_name=user.last_name,
         username=user.username
     )
-    sender_anon_name = db_user[2]
+    sender_anon_name = sender[2]
 
     # --- Single emoji = REACTION --- #
     if is_single_emoji(content) and is_reply:
@@ -81,9 +81,9 @@ async def group_message_handler(message: types.Message):
             db.add_reaction(uid, reply_post[0], content)
             reactions = db.select_reactions(post=reply_post[0])
             org = message.reply_to_message.html_text or message.reply_to_message.caption or ""
-            if (org.split('\n'))[-1].startswith('<blockquote>'):
-                org = ''.join(org.split('\n')[:-1])
-                logger.info(org)
+            tmp = org.split('\n')
+            if tmp[-1].startswith('<blockquote>'):
+                org = ''.join(tmp[:-1])
             org += "\n\n<blockquote>REACTIONS: "
             for i in reactions:
                 org+=f"{i[1]}x{i[0]}  "
@@ -103,20 +103,18 @@ async def group_message_handler(message: types.Message):
 
 
     # --- Edit-by-reference: edit "*new text" ---
-    if content[0] == "*" and message.reply_to_message is not None:
-        new_text = content[1:]
-        target_id = message.reply_to_message.message_id
-        logger.info(target_id)
-        post = db.select_post(message_id=target_id)
-        logger.info()
-        user = db.select_user(telegram_id=message.from_user.id)
+    if content[0] == "*" and is_reply:
+        tmp = message.reply_to_message.html_text.split('\n\n')
+        new_text = tmp[0] + content[1:] + tmp[2] if len(tmp) == 3 else ''
+        post = db.select_post(to_message_id=reply_id)
+        user = db.select_user(telegram_id=user.id)
         user_post = db.select_user_post(post=post[0], user=user[0])
         if user_post:
             try:
                 if message.reply_to_message.caption:
-                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption=new_text)
+                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[3], caption=new_text)
                 else:
-                    await bot.edit_message_text(text=new_text, chat_id=chat_id, message_id=post[2])
+                    await bot.edit_message_text(text=new_text, chat_id=chat_id, message_id=post[3])
                 await message.delete()
             except Exception as e:
                 logger.error(e)
@@ -128,7 +126,7 @@ async def group_message_handler(message: types.Message):
 
     reply_post = None
     if message.reply_to_message:
-        reply_post = _get_reply_post(chat_id, message.reply_to_message.message_id)
+        reply_post = _get_reply_post(chat_id, reply_id)
         reply_user = _get_reply_user(reply_post)
         if reply_user:
             lines.append(f"<blockquote>#REPLY_TO #{reply_user}</blockquote>")
@@ -138,8 +136,7 @@ async def group_message_handler(message: types.Message):
 
     if content:
         escaped = _esc(content)
-        lines.append('\n')
-        lines.append(escaped)
+        lines.append(f'\n{escaped}')
 
     msg = "\n".join(lines)
     # Send message to group
@@ -165,32 +162,12 @@ async def group_message_handler(message: types.Message):
 
     # Save to DB
     db.add_post(
-        to_id=chat_id, message_id=message.message_id,
+        to_id=chat_id, message_id=msg_id,
         to_message_id=sent.message_id, channel_id=chat_id,
         created_at=datetime.now()
     )
-    last_post = db.select_post(to_id=chat_id, message_id=message.message_id)
+    last_post = db.select_post(to_id=chat_id, message_id=msg_id)
     if last_post:
-        db.add_user_post(user=db_user[0], post=last_post[0])
-        # post_id = last_post[0]
-        # Update message with post numbers
-        # number_line = f"\n#{post_id}"
-        # if reply_post:
-        #     number_line += f"  reply to #{reply_post[0]}"
-
-        # updated_lines = lines + [number_line]
-        # try:
-        #     if message.photo or message.video or message.animation:
-        #         await bot.edit_message_caption(
-        #             chat_id=chat_id, message_id=sent.message_id,
-        #             caption="\n".join(updated_lines), parse_mode=ParseMode.HTML
-        #         )
-        #     else:
-        #         await bot.edit_message_text(
-        #             chat_id=chat_id, message_id=sent.message_id,
-        #             text="\n".join(updated_lines), parse_mode=ParseMode.HTML
-        #         )
-        # except Exception as e:
-        #     logger.info(f"Post number update failed: {e}")
+        db.add_user_post(user=sender[0], post=last_post[0])
 
     await message.delete()
