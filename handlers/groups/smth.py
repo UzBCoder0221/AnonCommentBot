@@ -56,28 +56,32 @@ async def group_message_handler(message: types.Message):
         return
     chat_id = message.chat.id
     user = message.from_user
+    msg_id = message.message_id
+    reply_id = message.reply_to_message.message_id
+    content = message.text or message.caption or ""
+    is_reply = message.reply_to_message is not None
+    
 
-    db_user = db.get_or_create_user(
+    sender = db.get_or_create_user(
         telegram_id=user.id,
         first_name=user.first_name,
         last_name=user.last_name,
         username=user.username
     )
-    anon_name = db_user[2]
-    content = message.text or message.caption or ""
+    sender_anon_name = db_user[2]
 
     # --- Single emoji = REACTION --- #
-    if is_single_emoji(content) and message.reply_to_message is not None:
-        post = _get_reply_post(chat_id, message.reply_to_message.message_id)
-        if post:
-            uid = db.select_user(telegram_id=message.from_user.id)[0]
-            if db.select_reaction(user=uid, post=post[0]):
+    if is_single_emoji(content) and is_reply:
+        reply_post = _get_reply_post(chat_id, reply_id)
+        if reply_post:
+            uid = sender[0]
+            if db.select_reaction(user=uid, post=reply_post[0]):
                 await message.delete()
                 return
-            db.add_reaction(uid, post[0], content)
-            reactions = db.select_reactions(user=uid, post=post[0])
-            org = message.reply_to_message.html_text or message.reply_to_message.html_text or ""
-            if org.split('\n')[-1].startswith('<blockquote>'):
+            db.add_reaction(uid, reply_post[0], content)
+            reactions = db.select_reactions(post=reply_post[0])
+            org = message.reply_to_message.html_text or message.reply_to_message.caption or ""
+            if (org.split('\n'))[-1].startswith('<blockquote>'):
                 org = ''.join(org.split('\n')[:-1])
                 logger.info(org)
             org += "\n\n<blockquote>REACTIONS: "
@@ -87,9 +91,9 @@ async def group_message_handler(message: types.Message):
 
             try:
                 if message.reply_to_message.caption:
-                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[3], caption=org)
+                    await bot.edit_message_caption(chat_id=chat_id, message_id=reply_post[3], caption=org)
                 else:
-                    await bot.edit_message_text(text=org, chat_id=chat_id, message_id=post[3])
+                    await bot.edit_message_text(text=org, chat_id=chat_id, message_id=reply_post[3])
                 await message.delete()
             except Exception as e:
                 logger.error(e)
@@ -99,29 +103,28 @@ async def group_message_handler(message: types.Message):
 
 
     # --- Edit-by-reference: edit "*new text" ---
-    edit_match = content[0] == "*"
-    if edit_match:
-        target_post_id = int(edit_match.group(1))
-        new_text = edit_match.group(2)
-        post = db.select_post(id=target_post_id)
-        if post:
-            up = db.select_user_post(post=target_post_id)
-            if up and up[1] == db_user[0]:
-                escaped = _esc(new_text)
-                lines = [f"<b>{anon_name} (edited)</b>", escaped]
-                try:
-                    await bot.edit_message_text(
-                        chat_id=chat_id, message_id=post[3],
-                        text="\n".join(lines), parse_mode=ParseMode.HTML
-                    )
-                except Exception as e:
-                    logger.info(f"Edit failed: {e}")
-        await message.delete()
+    if content[0] == "*" and message.reply_to_message is not None:
+        new_text = content[1:]
+        target_id = message.reply_to_message.message_id
+        logger.info(target_id)
+        post = db.select_post(message_id=target_id)
+        logger.info()
+        user = db.select_user(telegram_id=message.from_user.id)
+        user_post = db.select_user_post(post=post[0], user=user[0])
+        if user_post:
+            try:
+                if message.reply_to_message.caption:
+                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption=new_text)
+                else:
+                    await bot.edit_message_text(text=new_text, chat_id=chat_id, message_id=post[2])
+                await message.delete()
+            except Exception as e:
+                logger.error(e)
         return
 
 
     # --- Normal message ---
-    lines = [f"<blockquote>#{anon_name}</blockquote>"]
+    lines = [f"<blockquote>#{sender_anon_name}</blockquote>"]
 
     reply_post = None
     if message.reply_to_message:
@@ -130,7 +133,7 @@ async def group_message_handler(message: types.Message):
         if reply_user:
             lines.append(f"<blockquote>#REPLY_TO #{reply_user}</blockquote>")
             lines.append(f"<blockquote>#REPLY_TO_MESSAGE #MESSAGE_{reply_post[0]}</blockquote>")
-    lines.append(f"<blockquote>#MESSAGE_{last_post[0]}</blockquote>")
+    # lines.append(f"<blockquote>#MESSAGE_{last_post[0]}</blockquote>")
     # todo: fix last post (unbounded)
 
     if content:
