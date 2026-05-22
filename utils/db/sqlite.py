@@ -218,7 +218,6 @@ class Database:
         sql = "SELECT reaction, COUNT(user) FROM reaction WHERE "
         sql, parameters = self.format_args(sql, kwargs)
         sql += " GROUP BY reaction ORDER BY id;"
-        print(sql)
         return self.execute(sql, parameters=parameters, fetchall=True)
 
     def count_reactions(self):

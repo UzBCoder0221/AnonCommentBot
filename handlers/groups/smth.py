@@ -71,20 +71,25 @@ async def group_message_handler(message: types.Message):
         post = _get_reply_post(chat_id, message.reply_to_message.message_id)
         if post:
             uid = db.select_user(telegram_id=message.from_user.id)[0]
+            if db.select_reaction(user=uid, post=post[0]):
+                await message.delete()
+                return
             db.add_reaction(uid, post[0], content)
             reactions = db.select_reactions(user=uid, post=post[0])
-            org = message.reply_to_message.text or message.reply_to_message.caption or ""
-            org += "\n\n<quote>REACTIONS: "
-            #####################################################  re edit
+            org = message.reply_to_message.html_text or message.reply_to_message.html_text or ""
+            if org.split('\n')[-1].startswith('<blockquote>'):
+                org = ''.join(org.split('\n')[:-1])
+                logger.info(org)
+            org += "\n\n<blockquote>REACTIONS: "
             for i in reactions:
                 org+=f"{i[1]}x{i[0]}  "
-            org += "</quote>"
+            org += "</blockquote>"
 
             try:
                 if message.reply_to_message.caption:
-                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[3], caption=_esc(org))
+                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[3], caption=org)
                 else:
-                    await bot.edit_message_text(text=_esc(org), chat_id=chat_id, message_id=post[3])
+                    await bot.edit_message_text(text=org, chat_id=chat_id, message_id=post[3])
                 await message.delete()
             except Exception as e:
                 logger.error(e)
@@ -116,23 +121,24 @@ async def group_message_handler(message: types.Message):
 
 
     # --- Normal message ---
-    lines = [f"<quote>#{anon_name}</quote>"]
+    lines = [f"<blockquote>#{anon_name}</blockquote>"]
 
     reply_post = None
     if message.reply_to_message:
         reply_post = _get_reply_post(chat_id, message.reply_to_message.message_id)
         reply_user = _get_reply_user(reply_post)
         if reply_user:
-            lines.append(f"<quote>#REPLY_TO #{reply_user}</quote>")
-            lines.append(f"<quote>#REPLY_TO_MESSAGE #MESSAGE_{reply_post[0]}</quote>")
-    lines.append(f"<quote>#MESSAGE_{message.message_id}</quote>")
+            lines.append(f"<blockquote>#REPLY_TO #{reply_user}</blockquote>")
+            lines.append(f"<blockquote>#REPLY_TO_MESSAGE #MESSAGE_{reply_post[0]}</blockquote>")
+    lines.append(f"<blockquote>#MESSAGE_{last_post[0]}</blockquote>")
+    # todo: fix last post (unbounded)
 
     if content:
         escaped = _esc(content)
         lines.append('\n')
         lines.append(escaped)
 
-    msg = _esc("\n".join(lines))
+    msg = "\n".join(lines)
     # Send message to group
     if message.photo:
         sent = await bot.send_photo(
