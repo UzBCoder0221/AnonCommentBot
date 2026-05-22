@@ -67,26 +67,28 @@ async def group_message_handler(message: types.Message):
     content = message.text or message.caption or ""
 
     # --- Single emoji = REACTION --- #
-    if is_single_emoji(content) and message.reply_to_message:
+    if is_single_emoji(content) and message.reply_to_message is not None:
         post = _get_reply_post(chat_id, message.reply_to_message.message_id)
         if post:
             uid = db.select_user(telegram_id=message.from_user.id)[0]
             db.add_reaction(uid, post[0], content)
-            reactions = db.select_reactions(user=message.from_user.id, post=post[0])
+            reactions = db.select_reactions(user=uid, post=post[0])
             org = message.reply_to_message.text or message.reply_to_message.caption or ""
-            org += "\n<quote>REACTIONS: "
+            org += "\n\n<quote>REACTIONS: "
+            #####################################################  re edit
             for i in reactions:
-                org+=f"{i[1]}x{i[0]} "
+                org+=f"{i[1]}x{i[0]}  "
             org += "</quote>"
 
             try:
                 if message.reply_to_message.caption:
-                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[2], caption=org)
+                    await bot.edit_message_caption(chat_id=chat_id, message_id=post[3], caption=_esc(org))
                 else:
-                    await bot.edit_message_text(text=org,chat_id=chat_id, message_id=post[2])
+                    await bot.edit_message_text(text=_esc(org), chat_id=chat_id, message_id=post[3])
                 await message.delete()
             except Exception as e:
                 logger.error(e)
+            return
 
         ####    FALLBACK LOGIC HERE    ####
 
