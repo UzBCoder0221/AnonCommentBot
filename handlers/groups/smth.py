@@ -59,7 +59,7 @@ async def group_message_handler(message: types.Message):
     msg_id = message.message_id
     is_reply = message.reply_to_message is not None
     reply_id = message.reply_to_message.message_id if is_reply else None
-    content = message.text or message.caption or ""
+    content = message.text or message.caption or " "
 
 
     sender = db.get_or_create_user(
@@ -82,7 +82,7 @@ async def group_message_handler(message: types.Message):
             reactions = db.select_reactions(post=reply_post[0])
             org = message.reply_to_message.html_text or message.reply_to_message.caption or ""
             tmp = org.split('\n')
-            if tmp[-1].startswith('<blockquote>'):
+            if tmp[-1].startswith('<blockquote>') and not 'message' in tmp[-1].lower():
                 org = ''.join(tmp[:-1])
             org += "\n\n<blockquote>REACTIONS: "
             for i in reactions:
@@ -105,7 +105,7 @@ async def group_message_handler(message: types.Message):
     # --- Edit-by-reference: edit "*new text" ---
     if content[0] == "*" and is_reply:
         tmp = message.reply_to_message.html_text.split('\n\n')
-        new_text = tmp[0] + '\n\n' + content[1:] + '\n\n' + (tmp[2] if len(tmp) == 3 else '')
+        new_text = tmp[0] + '\n\n' + content[1:] + '\n\n' + (tmp[-1] if len(tmp) == 3 or ('blockquote>' in tmp[-1] and not len(tmp) == 1) else '')
         post = db.select_post(to_message_id=reply_id)
         user = db.select_user(telegram_id=user.id)
         user_post = db.select_user_post(post=post[0], user=user[0])
@@ -124,8 +124,7 @@ async def group_message_handler(message: types.Message):
     # --- Normal message ---
     lines = [f"<blockquote>#{sender_anon_name}</blockquote>"]
 
-    reply_post = None
-    if message.reply_to_message:
+    if is_reply:
         reply_post = _get_reply_post(chat_id, reply_id)
         reply_user = _get_reply_user(reply_post)
         if reply_user:
@@ -138,7 +137,6 @@ async def group_message_handler(message: types.Message):
     )
     pre_sent = db.select_post(message_id=msg_id,channel_id=chat_id)
     lines.append(f"<blockquote>#MESSAGE_{pre_sent[0]}</blockquote>")
-    # todo: fix last post (unbounded)
 
     if content:
         escaped = _esc(content)
@@ -167,7 +165,8 @@ async def group_message_handler(message: types.Message):
         )
 
     # Save to DB
-    db.update_post(sent.message_id,sent.message_id)
+    db.update_post(channel_id=chat_id, msg_id=msg_id,to_message_id=sent.message_id)
+
     ###  todo: fix this ^
     last_post = db.select_post(to_id=chat_id, message_id=msg_id)
     if last_post:

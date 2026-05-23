@@ -158,11 +158,11 @@ class Database:
         UPDATE Posts SET content=? WHERE id=?
         """
         return self.execute(sql, parameters=(content, id), commit=True)
-    def update_post(self, msg_id, to_message_id):
+    def update_post(self, channel_id, msg_id, to_message_id):
         sql = """
-        UPDATE Posts SET to_message_id=? WHERE message_id=?
+        UPDATE Posts SET to_message_id=? WHERE message_id=? AND channel_id=?
         """
-        return self.execute(sql, parameters=(to_message_id, msg_id), commit=True)
+        return self.execute(sql, parameters=(to_message_id, msg_id, channel_id), commit=True)
 
     def update_post_to_message_id(self, to_message_id, id):
         sql = """
