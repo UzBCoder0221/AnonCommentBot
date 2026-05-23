@@ -99,7 +99,7 @@ class Database:
         """
         self.execute(sql, parameters=(telegram_id, anon_name, first_name, last_name, username, joined_at, language), commit=True)
     
-    def add_post(self, to_id: int, message_id: int, to_message_id: int = None, thread_start_id: int = None, channel_id: int = None, content: str = None, created_at=datetime.today()):
+    def add_post(self, to_id: int, message_id: int, to_message_id: int|None = None, thread_start_id: int = None, channel_id: int = None, content: str = None, created_at=datetime.today()):
         sql = """
         INSERT INTO Posts(to_id, message_id, to_message_id, thread_start_id, channel_id, content, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)
         """
@@ -158,6 +158,11 @@ class Database:
         UPDATE Posts SET content=? WHERE id=?
         """
         return self.execute(sql, parameters=(content, id), commit=True)
+    def update_post(self, msg_id, to_message_id):
+        sql = """
+        UPDATE Posts SET to_message_id=? WHERE message_id=?
+        """
+        return self.execute(sql, parameters=(to_message_id, msg_id), commit=True)
 
     def update_post_to_message_id(self, to_message_id, id):
         sql = """

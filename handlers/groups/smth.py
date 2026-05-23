@@ -105,7 +105,7 @@ async def group_message_handler(message: types.Message):
     # --- Edit-by-reference: edit "*new text" ---
     if content[0] == "*" and is_reply:
         tmp = message.reply_to_message.html_text.split('\n\n')
-        new_text = tmp[0] + content[1:] + tmp[2] if len(tmp) == 3 else ''
+        new_text = tmp[0] + '\n\n' + content[1:] + '\n\n' + (tmp[2] if len(tmp) == 3 else '')
         post = db.select_post(to_message_id=reply_id)
         user = db.select_user(telegram_id=user.id)
         user_post = db.select_user_post(post=post[0], user=user[0])
@@ -118,7 +118,7 @@ async def group_message_handler(message: types.Message):
                 await message.delete()
             except Exception as e:
                 logger.error(e)
-        return
+            return
 
 
     # --- Normal message ---
@@ -131,7 +131,13 @@ async def group_message_handler(message: types.Message):
         if reply_user:
             lines.append(f"<blockquote>#REPLY_TO #{reply_user}</blockquote>")
             lines.append(f"<blockquote>#REPLY_TO_MESSAGE #MESSAGE_{reply_post[0]}</blockquote>")
-    # lines.append(f"<blockquote>#MESSAGE_{last_post[0]}</blockquote>")
+    db.add_post(
+        to_id=chat_id, message_id=msg_id,
+        to_message_id=None, channel_id=chat_id,
+        created_at=datetime.now()
+    )
+    pre_sent = db.select_post(message_id=msg_id,channel_id=chat_id)
+    lines.append(f"<blockquote>#MESSAGE_{pre_sent[0]}</blockquote>")
     # todo: fix last post (unbounded)
 
     if content:
@@ -161,11 +167,8 @@ async def group_message_handler(message: types.Message):
         )
 
     # Save to DB
-    db.add_post(
-        to_id=chat_id, message_id=msg_id,
-        to_message_id=sent.message_id, channel_id=chat_id,
-        created_at=datetime.now()
-    )
+    db.update_post(sent.message_id,sent.message_id)
+    ###  todo: fix this ^
     last_post = db.select_post(to_id=chat_id, message_id=msg_id)
     if last_post:
         db.add_user_post(user=sender[0], post=last_post[0])
