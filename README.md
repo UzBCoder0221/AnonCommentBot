@@ -1,3 +1,16 @@
+# Purpose:
+To maintain anonymity in a telegram group chat. 
+
+# How to use the bot (in telegram):
+Add the bot to the group, make the bot admin, grant all required permissions (read, edit chat/messages). That's it. Now messages are resent by bot deleting original thus partially maintaining anonymity.
+
+### NOTE: 
+DB structure can be optimized.\
+SQLite is used but you can customize the code to utilize PostgreSQL which is more suitable for real projects. \
+Below is basic setup.\
+Use the project at your own risk as anonymity is double-edged sword.
+
+
 # Aiogram New Template (aiogram 3)
 
 ### 1. Create virtual environment and install packages
