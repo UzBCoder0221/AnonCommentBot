@@ -1,4 +1,5 @@
 from aiogram import Router, types, F
+from aiogram.enums import ChatType
 from aiogram.enums.parse_mode import ParseMode
 from aiogram.client.session.middlewares.request_logging import logger
 from loader import db, bot
@@ -54,6 +55,12 @@ def _get_reply_user(reply_post):
 async def group_message_handler(message: types.Message):
     if message.from_user.is_bot:
         return
+    if message.sender_chat:
+        # to prevent removing channel posts (deleting them causes problems in comments section of the channel)
+        # Group and supergroup are inherently "anonymous" as they don't expose the real account behind the author
+        # I'm not sure whether ChatType.GROUP, ChatType.SUPERGROUP is even necessary
+        if message.sender_chat.type in [ChatType.CHANNEL, ChatType.GROUP, ChatType.SUPERGROUP]:
+            return
     chat_id = message.chat.id
     user = message.from_user
     msg_id = message.message_id
@@ -103,6 +110,7 @@ async def group_message_handler(message: types.Message):
 
 
     # --- Edit-by-reference: edit "*new text" ---
+    # you could make it append with "*+something to append"
     if content[0] == "*" and is_reply:
         tmp = message.reply_to_message.html_text.split('\n\n')
         new_text = tmp[0] + '\n\n' + content[1:] + '\n\n' + (tmp[-1] if len(tmp) == 3 or ('blockquote>' in tmp[-1] and not len(tmp) == 1) else '')
@@ -144,6 +152,7 @@ async def group_message_handler(message: types.Message):
 
     msg = "\n".join(lines)
     # Send message to group
+    ### sending mediagroup is a hassle so I did not implement it. More in README
     if message.photo:
         sent = await bot.send_photo(
             chat_id=chat_id, photo=message.photo[-1].file_id,
@@ -167,7 +176,6 @@ async def group_message_handler(message: types.Message):
     # Save to DB
     db.update_post(channel_id=chat_id, msg_id=msg_id,to_message_id=sent.message_id)
 
-    ###  todo: fix this ^
     last_post = db.select_post(to_id=chat_id, message_id=msg_id)
     if last_post:
         db.add_user_post(user=sender[0], post=last_post[0])

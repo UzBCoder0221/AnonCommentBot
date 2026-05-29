@@ -7,6 +7,7 @@ Add the bot to the group, make the bot admin, grant all required permissions (re
 ### NOTE: 
 DB structure can be optimized.\
 SQLite is used but you can customize the code to utilize PostgreSQL which is more suitable for real projects. \
+To send media group (10 images/videos in single message instead of 1 by 1) you need to make a middleware to collect by media_group_id, add the Middleware to the router, handle it in handler. \ 
 Below is basic setup.\
 Use the project at your own risk as anonymity is double-edged sword.
 
